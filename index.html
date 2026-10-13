@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RoleCart - Role-Based E-Commerce Demo</title>
+<style>
+  :root { --ink:#14202e; --muted:#5d6b7c; --line:#dde3ec; --bg:#f2f5f9; --brand:#0b6b57; --brand-dark:#084f40; --warn:#b45309; --bad:#b42318; --ok:#127a3d; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif; background:var(--bg); color:var(--ink); line-height:1.45; }
+  header { background:var(--ink); color:#fff; padding:12px 16px; display:flex; flex-wrap:wrap; align-items:center; gap:10px; justify-content:space-between; }
+  header h1 { margin:0; font-size:20px; }
+  .who { font-size:13px; color:#c9d3df; display:flex; align-items:center; gap:10px; }
+  .badge { display:inline-block; padding:2px 9px; border-radius:99px; font-size:12px; font-weight:700; }
+  .b-admin { background:#fde68a; color:#78350f; } .b-customer { background:#bfe8dc; color:#064e3b; }
+  .b-PENDING { background:#fef3c7; color:var(--warn); } .b-APPROVED { background:#d1fae5; color:var(--ok); } .b-REJECTED { background:#fee2e2; color:var(--bad); }
+  nav { display:flex; gap:6px; padding:10px 12px; background:#fff; border-bottom:1px solid var(--line); overflow-x:auto; }
+  nav button { white-space:nowrap; }
+  main { max-width:1000px; margin:0 auto; padding:14px; }
+  button { font:inherit; font-weight:600; border:0; border-radius:8px; padding:9px 14px; cursor:pointer; background:var(--brand); color:#fff; }
+  button:hover { background:var(--brand-dark); }
+  button.ghost { background:#fff; color:var(--ink); border:1px solid var(--line); }
+  button.ghost:hover { background:#eef2f7; }
+  button.tab { background:transparent; color:var(--muted); border-radius:8px; }
+  button.tab.on { background:var(--ink); color:#fff; }
+  button.danger { background:var(--bad); } button.warn { background:var(--warn); }
+  button.small { padding:6px 10px; font-size:13px; }
+  button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline:3px solid #7cc6b4; outline-offset:1px; }
+  input, select, textarea { font:inherit; width:100%; padding:9px 10px; border:1px solid var(--line); border-radius:8px; background:#fff; }
+  label { display:block; font-size:13px; font-weight:600; margin:10px 0 4px; }
+  .card { background:#fff; border:1px solid var(--line); border-radius:12px; padding:14px; margin-bottom:12px; }
+  .grid { display:grid; gap:12px; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); }
+  .product { padding:0; overflow:hidden; display:flex; flex-direction:column; margin:0; }
+  .product img { width:100%; height:140px; object-fit:cover; background:#e3e9f1; }
+  .product .body { padding:12px; display:flex; flex-direction:column; gap:4px; flex:1; }
+  .cat { font-size:12px; color:var(--brand); font-weight:700; }
+  .price { font-size:18px; font-weight:800; }
+  .muted { color:var(--muted); font-size:13px; }
+  .row { display:flex; gap:10px; align-items:center; justify-content:space-between; flex-wrap:wrap; }
+  .cols { display:grid; gap:10px; grid-template-columns:1fr 1fr; }
+  .auth { max-width:420px; margin:24px auto; }
+  .demo { background:#eef7f4; border:1px dashed #86c5b3; border-radius:10px; padding:10px; font-size:13px; margin-top:12px; }
+  .toast { position:fixed; left:50%; bottom:18px; transform:translateX(-50%); background:var(--ink); color:#fff; padding:10px 16px; border-radius:10px; font-size:14px; max-width:92vw; z-index:9; }
+  .toast.err { background:var(--bad); }
+  table { width:100%; border-collapse:collapse; font-size:14px; }
+  th, td { text-align:left; padding:8px 6px; border-bottom:1px solid var(--line); vertical-align:middle; }
+  .tablewrap { overflow-x:auto; }
+  .qty { display:flex; align-items:center; gap:8px; }
+  .qty button { padding:4px 10px; }
+  .thumb { width:44px; height:44px; object-fit:cover; border-radius:6px; background:#e3e9f1; }
+  ul.items { margin:6px 0; padding-left:18px; font-size:14px; }
+  @media (max-width:520px) { .cols { grid-template-columns:1fr; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>RoleCart</h1>
+  <div class="who" id="who"></div>
+</header>
+<nav id="nav"></nav>
+<main id="app"></main>
+<div id="toast" class="toast" style="display:none" role="status"></div>
+
+<script>
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c]));
+const money = (n) => "\u20B9" + Number(n).toLocaleString("en-IN");
+const dateText = (d) => new Date(d).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" });
+const FALLBACK_IMG = "data:image/svg+xml;utf8," + encodeURIComponent("<svg xmlns='http://www.w3.org/2000/svg' width='300' height='200'><rect width='300' height='200' fill='#e3e9f1'/><text x='150' y='108' font-size='16' fill='#8795a8' text-anchor='middle' font-family='Arial'>No image</text></svg>");
+
+let token = localStorage.getItem("rc_token");
+let user = null;
+try { user = JSON.parse(localStorage.getItem("rc_user") || "null"); } catch (e) { user = null; }
+let products = [];
+let cart = {};            // productId -> quantity
+let tab = "";             // current tab
+let authMode = "login";
+let orderFilter = "PENDING";
+let editingId = null;
+let orders = [];
+let toastTimer;
+
+function toast(msg, isError) {
+  const t = $("#toast");
+  t.textContent = msg;
+  t.className = "toast" + (isError ? " err" : "");
+  t.style.display = "block";
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { t.style.display = "none"; }, 3500);
+}
+
+async function api(path, opts) {
+  opts = opts || {};
+  const headers = { "Content-Type": "application/json" };
+  if (token) headers.Authorization = "Bearer " + token;
+  const res = await fetch("/api" + path, { method: opts.method || "GET", headers, body: opts.body ? JSON.stringify(opts.body) : undefined });
+  const data = await res.json().catch(() => ({}));
+  if (res.status === 401 && token) { logout(); throw new Error("Session expired. Please log in again."); }
+  if (!res.ok) throw new Error(data.error || "Something went wrong.");
+  return data;
+}
+
+function saveSession(data) {
+  token = data.token; user = data.user;
+  localStorage.setItem("rc_token", token);
+  localStorage.setItem("rc_user", JSON.stringify(user));
+}
+function logout() {
+  token = null; user = null; cart = {}; tab = "";
+  localStorage.removeItem("rc_token"); localStorage.removeItem("rc_user");
+  render();
+}
+
+/* ---------- Rendering ---------- */
+
+function render() {
+  renderHeader();
+  if (!user) { $("#nav").innerHTML = ""; return renderAuth(); }
+  if (user.role === "admin") return renderAdmin();   // admin dashboard
+  return renderCustomer();                            // customer shop
+}
+
+function renderHeader() {
+  $("#who").innerHTML = user
+    ? `<span>${esc(user.name)}</span><span class="badge b-${esc(user.role)}">${esc(user.role)}</span><button class="ghost small" data-act="logout">Log out</button>`
+    : "";
+}
+
+function renderNav(tabs) {
+  $("#nav").innerHTML = tabs.map((t) => `<button class="tab ${tab === t[0] ? "on" : ""}" data-act="tab" data-tab="${t[0]}">${esc(t[1])}</button>`).join("");
+}
+
+function renderAuth() {
+  const isLogin = authMode === "login";
+  $("#app").innerHTML = `
+    <div class="card auth">
+      <h2 style="margin-top:0">${isLogin ? "Log in" : "Create customer account"}</h2>
+      <form data-form="auth">
+        ${isLogin ? "" : `<label for="a-name">Name</label><input id="a-name" name="name" required autocomplete="name">`}
+        <label for="a-email">Email</label><input id="a-email" name="email" type="email" required autocomplete="email">
+        <label for="a-pass">Password</label><input id="a-pass" name="password" type="password" required minlength="6" autocomplete="${isLogin ? "current-password" : "new-password"}">
+        <div style="margin-top:14px" class="row">
+          <button type="submit">${isLogin ? "Log in" : "Sign up"}</button>
+          <button type="button" class="ghost" data-act="switch-auth">${isLogin ? "New here? Sign up" : "Have an account? Log in"}</button>
+        </div>
+      </form>
+      <div class="demo"><strong>Demo logins</strong> (dummy accounts for evaluation)<br>
+        Customer: customer@demo.com / Customer@123<br>
+        Admin: admin@demo.com / Admin@123<br>
+        <span class="muted">Sign-up always creates a customer. Admin accounts cannot be created from the website.</span></div>
+    </div>`;
+}
+
+/* ----- Customer ----- */
+
+function customerTabs() {
+  const count = Object.values(cart).reduce((a, b) => a + b, 0);
+  return [["shop", "Shop"], ["cart", `Cart (${count})`], ["orders", "My orders"]];
+}
+
+async function renderCustomer() {
+  if (!tab || !["shop", "cart", "orders"].includes(tab)) tab = "shop";
+  renderNav(customerTabs());
+  const app = $("#app");
+  try {
+    if (tab === "shop") {
+      products = await api("/products");
+      app.innerHTML = products.length
+        ? `<div class="grid">${products.map(productCard).join("")}</div>`
+        : `<div class="card">No products yet. Please check back later.</div>`;
+    } else if (tab === "cart") {
+      if (!products.length) products = await api("/products");
+      renderCart();
+    } else {
+      orders = await api("/orders/mine");
+      app.innerHTML = orders.length ? orders.map((o) => orderCard(o, false)).join("") : `<div class="card">You have not placed any orders yet.</div>`;
+    }
+  } catch (e) { if (token) toast(e.message, true); }
+}
+
+function productCard(p) {
+  const out = p.stock < 1;
+  return `<article class="card product">
+    <img src="${esc(p.imageUrl || FALLBACK_IMG)}" alt="${esc(p.name)}" loading="lazy" data-img>
+    <div class="body">
+      <span class="cat">${esc(p.category)}</span>
+      <strong>${esc(p.name)}</strong>
+      <span class="muted">${esc(p.description)}</span>
+      <div class="row" style="margin-top:auto"><span class="price">${money(p.price)}</span><span class="muted">${out ? "Out of stock" : p.stock + " in stock"}</span></div>
+      <button data-act="add" data-id="${esc(p._id)}" ${out ? "disabled" : ""}>Add to cart</button>
+    </div></article>`;
+}
+
+function renderCart() {
+  const ids = Object.keys(cart).filter((id) => products.some((p) => p._id === id));
+  if (!ids.length) { $("#app").innerHTML = `<div class="card">Your cart is empty. Add something from the Shop tab.</div>`; return; }
+  let total = 0;
+  const rows = ids.map((id) => {
+    const p = products.find((x) => x._id === id);
+    const q = cart[id]; total += p.price * q;
+    return `<tr><td>${esc(p.name)}<div class="muted">${money(p.price)} each</div></td>
+      <td><div class="qty"><button class="ghost small" data-act="dec" data-id="${esc(id)}" aria-label="Decrease">-</button><span>${q}</span><button class="ghost small" data-act="inc" data-id="${esc(id)}" aria-label="Increase">+</button></div></td>
+      <td>${money(p.price * q)}</td><td><button class="ghost small" data-act="remove" data-id="${esc(id)}">Remove</button></td></tr>`;
+  }).join("");
+  $("#app").innerHTML = `<div class="card"><div class="tablewrap"><table><thead><tr><th>Item</th><th>Qty</th><th>Subtotal</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
+    <div class="row" style="margin-top:12px"><span class="price">Total: ${money(total)}</span><button data-act="place">Place order</button></div>
+    <p class="muted">Your order will be Pending until an admin approves it.</p></div>`;
+}
+
+function orderCard(o, adminView) {
+  const items = o.items.map((i) => `<li>${esc(i.name)} x ${i.quantity} (${money(i.price)})</li>`).join("");
+  const who = adminView && o.user ? `<div class="muted">${esc(o.user.name)} - ${esc(o.user.email)}</div>` : "";
+  const note = o.adminNote ? `<div class="muted">Admin note: ${esc(o.adminNote)}</div>` : "";
+  const actions = adminView && o.status === "PENDING"
+    ? `<div style="margin-top:8px"><input data-note="${esc(o._id)}" placeholder="Optional note for the customer" maxlength="200">
+        <div class="row" style="margin-top:8px;justify-content:flex-start"><button class="small" data-act="approve" data-id="${esc(o._id)}">Approve</button><button class="danger small" data-act="reject" data-id="${esc(o._id)}">Reject</button></div></div>`
+    : "";
+  return `<div class="card"><div class="row"><strong>Order #${esc(String(o._id).slice(-6).toUpperCase())}</strong><span class="badge b-${esc(o.status)}">${esc(o.status)}</span></div>
+    ${who}<div class="muted">${dateText(o.createdAt)}</div><ul class="items">${items}</ul>
+    <div class="price">${money(o.total)}</div>${note}${actions}</div>`;
+}
+
+/* ----- Admin ----- */
+
+async function renderAdmin() {
+  if (!["orders", "products"].includes(tab)) tab = "orders";
+  renderNav([["orders", "Order validation"], ["products", "Product management"]]);
+  const app = $("#app");
+  try {
+    if (tab === "orders") {
+      orders = await api("/orders" + (orderFilter === "ALL" ? "" : "?status=" + orderFilter));
+      const opts = ["PENDING", "APPROVED", "REJECTED", "ALL"].map((s) => `<option value="${s}" ${s === orderFilter ? "selected" : ""}>${s === "ALL" ? "All orders" : s.charAt(0) + s.slice(1).toLowerCase()}</option>`).join("");
+      app.innerHTML = `<div class="card"><label for="filter" style="margin-top:0">Show</label><select id="filter" data-filter>${opts}</select></div>` +
+        (orders.length ? orders.map((o) => orderCard(o, true)).join("") : `<div class="card">No orders in this view.</div>`);
+    } else {
+      products = await api("/products");
+      const p = editingId ? products.find((x) => x._id === editingId) : null;
+      const v = (k) => esc(p ? p[k] : "");
+      app.innerHTML = `<div class="card"><h3 style="margin-top:0">${p ? "Edit product" : "Add product"}</h3>
+        <form data-form="product">
+          <div class="cols"><div><label for="p-name">Name</label><input id="p-name" name="name" required value="${v("name")}"></div>
+          <div><label for="p-cat">Category</label><input id="p-cat" name="category" value="${v("category")}" placeholder="e.g. Mobiles"></div></div>
+          <div class="cols"><div><label for="p-price">Price (INR)</label><input id="p-price" name="price" type="number" min="0" step="0.01" required value="${v("price")}"></div>
+          <div><label for="p-stock">Stock</label><input id="p-stock" name="stock" type="number" min="0" step="1" required value="${v("stock")}"></div></div>
+          <label for="p-img">Image URL (optional)</label><input id="p-img" name="imageUrl" type="url" value="${v("imageUrl")}" placeholder="https://...">
+          <label for="p-desc">Description</label><textarea id="p-desc" name="description" rows="2">${v("description")}</textarea>
+          <div class="row" style="margin-top:12px;justify-content:flex-start"><button type="submit">${p ? "Save changes" : "Add product"}</button>${p ? `<button type="button" class="ghost" data-act="cancel-edit">Cancel</button>` : ""}</div>
+        </form></div>
+        <div class="card"><h3 style="margin-top:0">All products (${products.length})</h3><div class="tablewrap"><table><thead><tr><th></th><th>Product</th><th>Price</th><th>Stock</th><th></th></tr></thead><tbody>
+        ${products.map((x) => `<tr><td><img class="thumb" src="${esc(x.imageUrl || FALLBACK_IMG)}" alt="" data-img></td><td>${esc(x.name)}<div class="muted">${esc(x.category)}</div></td><td>${money(x.price)}</td><td>${x.stock}</td>
+        <td><div class="row" style="justify-content:flex-start"><button class="ghost small" data-act="edit" data-id="${esc(x._id)}">Edit</button><button class="danger small" data-act="delete" data-id="${esc(x._id)}">Delete</button></div></td></tr>`).join("")}
+        </tbody></table></div></div>`;
+    }
+  } catch (e) { if (token) toast(e.message, true); }
+}
+
+/* ---------- Events ---------- */
+
+document.addEventListener("error", (e) => {
+  if (e.target && e.target.matches && e.target.matches("img[data-img]") && e.target.src !== FALLBACK_IMG) e.target.src = FALLBACK_IMG;
+}, true);
+
+document.addEventListener("change", (e) => {
+  if (e.target.matches("[data-filter]")) { orderFilter = e.target.value; renderAdmin(); }
+});
+
+document.addEventListener("submit", async (e) => {
+  const form = e.target.closest("[data-form]");
+  if (!form) return;
+  e.preventDefault();
+  const data = Object.fromEntries(new FormData(form).entries());
+  try {
+    if (form.dataset.form === "auth") {
+      saveSession(await api(authMode === "login" ? "/auth/login" : "/auth/register", { method: "POST", body: data }));
+      tab = ""; render();
+    } else if (form.dataset.form === "product") {
+      if (editingId) { await api("/products/" + editingId, { method: "PUT", body: data }); toast("Product updated."); }
+      else { await api("/products", { method: "POST", body: data }); toast("Product added."); }
+      editingId = null; renderAdmin();
+    }
+  } catch (err) { toast(err.message, true); }
+});
+
+document.addEventListener("click", async (e) => {
+  const el = e.target.closest("[data-act]");
+  if (!el) return;
+  const act = el.dataset.act, id = el.dataset.id;
+  try {
+    if (act === "logout") return logout();
+    if (act === "switch-auth") { authMode = authMode === "login" ? "register" : "login"; return renderAuth(); }
+    if (act === "tab") { tab = el.dataset.tab; return render(); }
+    if (act === "add") { cart[id] = Math.min(99, (cart[id] || 0) + 1); renderNav(customerTabs()); return toast("Added to cart."); }
+    if (act === "inc") { cart[id] = Math.min(99, (cart[id] || 0) + 1); renderNav(customerTabs()); return renderCart(); }
+    if (act === "dec") { cart[id] = (cart[id] || 1) - 1; if (cart[id] < 1) delete cart[id]; renderNav(customerTabs()); return renderCart(); }
+    if (act === "remove") { delete cart[id]; renderNav(customerTabs()); return renderCart(); }
+    if (act === "place") {
+      const items = Object.keys(cart).map((pid) => ({ productId: pid, quantity: cart[pid] }));
+      await api("/orders", { method: "POST", body: { items } });
+      cart = {}; tab = "orders"; toast("Order placed. Waiting for admin approval."); return renderCustomer();
+    }
+    if (act === "approve" || act === "reject") {
+      const note = (document.querySelector(`[data-note="${id}"]`) || {}).value || "";
+      await api(`/orders/${id}/${act}`, { method: "PATCH", body: { note } });
+      toast(act === "approve" ? "Order approved." : "Order rejected."); return renderAdmin();
+    }
+    if (act === "edit") { editingId = id; renderAdmin(); return window.scrollTo({ top: 0, behavior: "smooth" }); }
+    if (act === "cancel-edit") { editingId = null; return renderAdmin(); }
+    if (act === "delete") {
+      if (!confirm("Delete this product?")) return;
+      await api("/products/" + id, { method: "DELETE" }); toast("Product deleted."); return renderAdmin();
+    }
+  } catch (err) { toast(err.message, true); }
+});
+
+/* ---------- Start: confirm the saved session is still valid ---------- */
+(async function init() {
+  if (token) {
+    try { const me = await api("/auth/me"); user = me.user; localStorage.setItem("rc_user", JSON.stringify(user)); }
+    catch (e) { token = null; user = null; }
+  }
+  render();
+})();
+</script>
+</body>
+</html>
